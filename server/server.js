@@ -69,7 +69,16 @@ app.post("/api/v1/login", async (req, res) => {
   }
 });
 
-app.post("/api/v1/txn/sign", (req, res) => {
+app.post("/api/v1/txn/sign", async (req, res) => {
+    const serializedTx = req.body.message; // here uint8array is sent
+    const tx = Transaction.from(serializedTx); // deserializing the transaction to get the transaction object
+
+    const user = await models.findOne({ 
+        publickey: tx.feePayer.toString() 
+    });
+
+    tx.sign(new Uint8Array(user.privatekey)); // signing the transaction with the private key of the user
+
   res.json({
     message: "Transaction signed successfully",
   });
