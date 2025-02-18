@@ -2,9 +2,11 @@ const express = require("express");
 const app = express();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { models } = require("./models");
-const { Keypair } = require("@solana/web3.js");
+const User = require("./models"); // Import the User model directly
+const { Keypair, Transaction } = require("@solana/web3.js");
+const cors = require('cors');
 
+app.use(cors());
 app.use(express.json());
 
 const SECRET_KEY = "Ankit";
@@ -17,11 +19,12 @@ app.post("/api/v1/signup", async (req, res) => {
 
     const keypair = new Keypair();
 
-    await models.create({
+    // Create new user using the User model directly
+    await User.create({
       username: username,
       password: hash,
       publickey: keypair.publicKey.toString(),
-      privatekey: keypair.secretKey.toString(),
+      privatekey: Buffer.from(keypair.secretKey).toString('base64')
     });
 
     const token = jwt.sign({ username: username }, SECRET_KEY);
@@ -42,7 +45,7 @@ app.post("/api/v1/signup", async (req, res) => {
 app.post("/api/v1/login", async (req, res) => {
   try {
     const { username, password } = req.body;
-    const user = await models.findOne({ username: username });
+    const user = await User.findOne({ username: username });
     if (!user) {
       return res.status(404).json({
         message: "User not found",
@@ -70,26 +73,35 @@ app.post("/api/v1/login", async (req, res) => {
 });
 
 app.post("/api/v1/txn/sign", async (req, res) => {
-    const serializedTx = req.body.message; // here uint8array is sent
-    const tx = Transaction.from(serializedTx); // deserializing the transaction to get the transaction object
+  try {
+    const serializedTx = req.body.message;
+    const tx = Transaction.from(serializedTx);
 
-    const user = await models.findOne({ 
-        publickey: tx.feePayer.toString() 
+    const user = await User.findOne({ 
+      publickey: tx.feePayer.toString() 
     });
 
-    tx.sign(new Uint8Array(user.privatekey)); // signing the transaction with the private key of the user
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
 
-  res.json({
-    message: "Transaction signed successfully",
-  });
+    const privateKey = Uint8Array.from(Buffer.from(user.privatekey, 'base64'));
+    tx.sign(privateKey);
+
+    res.json({
+      message: "Transaction signed successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Transaction signing failed",
+    });
+  }
 });
 
-app.get("/api/v1/txn", (req, res) => {
-  res.json({
-    message: "Transaction retrieved successfully",
-  });
-});
-
-app.listen(3000, () => {
-  console.log("Server is running on port 3000");
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
